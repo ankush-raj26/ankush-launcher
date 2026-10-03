@@ -24,3 +24,5 @@ misc.xml
 /app/free/release/*
 
 .worktrees/
+
+secrets.properties
