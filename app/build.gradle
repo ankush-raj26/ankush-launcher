@@ -16,6 +16,17 @@ android {
         versionName "11.1.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        // Personal build: read secrets from secrets.properties (or local.properties),
+        // falling back to empty values so the build never fails on missing keys.
+        def secrets = new Properties()
+        ['local.properties', 'secrets.properties'].each { name ->
+            def f = rootProject.file(name)
+            if (f.exists()) f.withInputStream { secrets.load(it) }
+        }
+        ['weatherAPIkey', 'crashReportEndpoint', 'crashApiKey', 'backupPassword'].each { key ->
+            manifestPlaceholders[key] = secrets.getProperty(key, '')
+        }
     }
 
     androidResources {
