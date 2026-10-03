@@ -564,7 +564,6 @@ class Terminal(
 
     private fun printIntro() {
         output("${activity.applicationInfo.loadLabel(activity.packageManager)} (v${BuildConfig.VERSION_NAME}) on ${Build.MANUFACTURER} ${Build.MODEL}",theme.resultTextColor, Typeface.BOLD)
-        output(activity.getString(R.string.intro_help_or_community), theme.resultTextColor, Typeface.BOLD)
         output("==================",theme.resultTextColor, Typeface.BOLD)
     }
 
