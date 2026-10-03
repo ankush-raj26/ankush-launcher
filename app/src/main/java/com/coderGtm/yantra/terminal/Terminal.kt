@@ -618,8 +618,8 @@ class Terminal(
         }
         commandName?.let { _ ->
             aliasList.find { it.key == commandName }?.let { alias ->
-                // Ankush: aliases are time-locked. Type "<alias> <hour+minute>" (24h clock),
-                // e.g. at 01:02 "fk 3". Without the right code it acts like an unknown command.
+                // Ankush: aliases are time-locked. Type "<alias> <code>" (see Ankush.timeCode),
+                // e.g. at 1:02 "fk 7". Without the right code it acts like an unknown command.
                 val parts = command.trim().split(" ").filter { it.isNotEmpty() }
                 val rest: List<String>
                 if (isAlias) {
@@ -877,7 +877,7 @@ class Terminal(
             }
         }
         output("-------------------------", theme.warningTextColor, null)
-        output("Aliases (type: <alias> <hour+minute>, 24h clock)", theme.warningTextColor, Typeface.BOLD)
+        output("Aliases (type: <alias> <time code>)", theme.warningTextColor, Typeface.BOLD)
         if (aliases.isEmpty()) {
             output("No aliases.", theme.resultTextColor, null)
         } else {

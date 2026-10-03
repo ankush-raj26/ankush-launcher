@@ -7,7 +7,7 @@ import java.util.Calendar
 /**
  * Personal features for the "Ankush" build:
  *  - renaming commands (e.g. launch -> luck); the original name stops working
- *  - time-locked aliases: an alias only runs when followed by (hour + minute), 24h clock
+ *  - time-locked aliases: an alias only runs when followed by the time code (see timeCode)
  *  - password-protected, hidden management commands (ankush-*)
  *  - privacy: no suggestions, no history, no echo, auto-clear, lockout, decoy password,
  *    protected commands, optional screenshot blocking (extra_privacy)
@@ -81,9 +81,18 @@ object Ankush {
 
     // ---------- time code for aliases ----------
 
-    /** hour (0-23) + minute (0-59). 1:02 -> 3, 13:45 -> 58. */
-    fun timeCode(calendar: Calendar = Calendar.getInstance()): Int =
-        calendar.get(Calendar.HOUR_OF_DAY) + calendar.get(Calendar.MINUTE)
+    /**
+     * Alias time code, 12-hour clock (hour 1-12, so 12 AM/PM counts as 12):
+     *   ((hour + 1) + (minute + 1)) / 2, decimals dropped, then + 5.
+     * Examples: 1:02 -> (2 + 3) / 2 = 2.5 -> 2 -> 7
+     *           1:45 PM -> (2 + 46) / 2 = 24 -> 29
+     *           12:30 -> (13 + 31) / 2 = 22 -> 27
+     */
+    fun timeCode(calendar: Calendar = Calendar.getInstance()): Int {
+        val hour12 = calendar.get(Calendar.HOUR).let { if (it == 0) 12 else it }
+        val minute = calendar.get(Calendar.MINUTE)
+        return ((hour12 + 1) + (minute + 1)) / 2 + 5  // integer division drops the .5
+    }
 
     /**
      * Codes accepted right now: the current minute, plus the previous minute as a
