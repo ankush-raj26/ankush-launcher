@@ -702,6 +702,7 @@ class Terminal(
     fun ankushDoubleTapLock() {
         endAnkushPrompt()
         ankushUnlockedUntil = 0L
+        Ankush.clearUnlocked(preferenceObject)
         activity.runOnUiThread {
             ankushHandler.removeCallbacks(ankushClearScreen)
             binding.terminalOutput.removeAllViews()
@@ -769,6 +770,7 @@ class Terminal(
             // switching the alias lock always asks for the password, even inside the unlock window
             Ankush.ALIAS_LOCK_COMMAND -> requireAuth(true, name, alwaysAsk = true) { ankushAliasLock(args) }
             Ankush.OFFSET_COMMAND -> requireAuth(true, name) { ankushOffset(args) }
+            Ankush.GUARD_COMMAND -> requireAuth(true, name, alwaysAsk = true) { ankushGuard(args) }
         }
     }
 
@@ -798,6 +800,7 @@ class Terminal(
 
     private fun unlockAnkush() {
         ankushUnlockedUntil = System.currentTimeMillis() + Ankush.UNLOCK_WINDOW_MS
+        Ankush.markUnlocked(preferenceObject) // let Ankush Guard allow Settings briefly
     }
 
     private fun handleAnkushPromptInput(input: String) {
@@ -917,6 +920,7 @@ class Terminal(
         t("Alias lock ........ ${onOff(aliasLock)}   -> ${Ankush.ALIAS_LOCK_COMMAND} on|off")
         t("Time-code offset .. $offset    -> ${Ankush.OFFSET_COMMAND} <0-${Ankush.MAX_OFFSET}>")
         t("Extra privacy ..... ${onOff(Ankush.isExtraPrivacy(prefs))}  -> ${Ankush.PRIVACY_COMMAND} on|off")
+        t("Settings guard .... ${onOff(Ankush.isGuard(prefs))}  -> ${Ankush.GUARD_COMMAND} on|off")
         t("Decoy password .... ${if (Ankush.hasDecoyPassword(prefs)) "set" else "not set"}  -> ${Ankush.DECOY_COMMAND} / ${Ankush.DECOY_COMMAND} off")
         t(line)
 
@@ -965,6 +969,7 @@ class Terminal(
         t("${Ankush.PASSWD_COMMAND} ............ change your password")
         t("${Ankush.DECOY_COMMAND} [off] ....... set / remove decoy password")
         t("${Ankush.PRIVACY_COMMAND} on|off .... block screenshots + recents preview")
+        t("${Ankush.GUARD_COMMAND} on|off ...... bounce out of Settings when locked")
         t("Decoy password at ${Ankush.HELP_COMMAND} shows a fake list: no renames, no aliases.")
         t("Check a setting without changing it: ${Ankush.ALIAS_LOCK_COMMAND}, ${Ankush.OFFSET_COMMAND}, ${Ankush.PRIVACY_COMMAND} (no on/off).")
         t(line)
@@ -1006,6 +1011,31 @@ class Terminal(
         applyExtraPrivacy()
         val on = Ankush.isExtraPrivacy(preferenceObject)
         output("Extra privacy is " + (if (on) "ON: screenshots and the recent-apps preview are blocked." else "OFF."), theme.successTextColor, null)
+    }
+
+    private fun ankushGuard(args: List<String>) {
+        when (args.getOrNull(1)?.lowercase()) {
+            "on" -> {
+                if (!com.coderGtm.yantra.commands.lock.isAccessibilityServiceEnabled(activity)) {
+                    output("Turn on Ankush under Settings > Accessibility first, then run this again.", theme.errorTextColor, null)
+                    activity.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    return
+                }
+                Ankush.setGuard(preferenceObject, true)
+            }
+            "off" -> Ankush.setGuard(preferenceObject, false)
+            null -> {}
+            else -> {
+                output("Usage: ${Ankush.GUARD_COMMAND} on|off", theme.errorTextColor, null)
+                return
+            }
+        }
+        if (Ankush.isGuard(preferenceObject)) {
+            output("Ankush Guard is ON: opening Settings bounces back here unless you unlocked in the last ${Ankush.UNLOCK_WINDOW_MS / 1000}s.", theme.successTextColor, null)
+            output("To open Settings yourself: run any ankush- command with your password first, then open Settings within ${Ankush.UNLOCK_WINDOW_MS / 1000}s.", theme.resultTextColor, null)
+        } else {
+            output("Ankush Guard is OFF.", theme.warningTextColor, null)
+        }
     }
 
     private fun ankushOffset(args: List<String>) {

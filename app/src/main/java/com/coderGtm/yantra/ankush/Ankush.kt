@@ -22,9 +22,17 @@ object Ankush {
     const val PRIVACY_COMMAND = "ankush-privacy"
     const val ALIAS_LOCK_COMMAND = "ankush-alias"
     const val OFFSET_COMMAND = "ankush-offset"
+    const val GUARD_COMMAND = "ankush-guard"
     val MANAGEMENT_COMMANDS = setOf(
         HELP_COMMAND, RENAME_COMMAND, RESET_COMMAND, PASSWD_COMMAND, DECOY_COMMAND, PRIVACY_COMMAND,
-        ALIAS_LOCK_COMMAND, OFFSET_COMMAND
+        ALIAS_LOCK_COMMAND, OFFSET_COMMAND, GUARD_COMMAND
+    )
+
+    /** System packages Ankush Guard bounces back to home (the Settings app). */
+    val GUARDED_PACKAGES = setOf(
+        "com.android.settings",
+        "com.samsung.android.settings",
+        "com.miui.securitycenter",   // some OEM settings entry points
     )
 
     /** Built-in commands that only work while the alias lock is OFF. */
@@ -58,6 +66,8 @@ object Ankush {
     private const val PREF_LOCKED_UNTIL = "ankushLockedUntil"
     private const val PREF_EXTRA_PRIVACY = "ankushExtraPrivacy"
     private const val PREF_ALIAS_LOCK = "ankushAliasLock"
+    private const val PREF_GUARD = "ankushGuard"
+    private const val PREF_UNLOCKED_UNTIL = "ankushUnlockedUntil"
     private const val PREF_OFFSET = "ankushTimeCodeOffset"
     const val DEFAULT_OFFSET = 5
     const val MAX_OFFSET = 99
@@ -175,6 +185,25 @@ object Ankush {
     // ---------- extra_privacy (blocks screenshots / recents preview) ----------
 
     fun isExtraPrivacy(prefs: SharedPreferences): Boolean = prefs.getBoolean(PREF_EXTRA_PRIVACY, false)
+
+    // ---------- Ankush Guard (bounce out of Settings when locked) ----------
+    fun isGuard(prefs: SharedPreferences): Boolean = prefs.getBoolean(PREF_GUARD, false)
+
+    fun setGuard(prefs: SharedPreferences, enabled: Boolean) {
+        prefs.edit().putBoolean(PREF_GUARD, enabled).apply()
+    }
+
+    /** Shared with the accessibility service: how long Settings stays allowed after a password. */
+    fun markUnlocked(prefs: SharedPreferences) {
+        prefs.edit().putLong(PREF_UNLOCKED_UNTIL, System.currentTimeMillis() + UNLOCK_WINDOW_MS).apply()
+    }
+
+    fun clearUnlocked(prefs: SharedPreferences) {
+        prefs.edit().putLong(PREF_UNLOCKED_UNTIL, 0L).apply()
+    }
+
+    fun isUnlocked(prefs: SharedPreferences): Boolean =
+        System.currentTimeMillis() < prefs.getLong(PREF_UNLOCKED_UNTIL, 0L)
 
     fun setExtraPrivacy(prefs: SharedPreferences, enabled: Boolean) {
         prefs.edit().putBoolean(PREF_EXTRA_PRIVACY, enabled).apply()

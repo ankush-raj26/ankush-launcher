@@ -6,8 +6,11 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.SharedPreferences
 import android.os.Build
 import android.view.accessibility.AccessibilityEvent
+import com.coderGtm.yantra.SHARED_PREFS_FILE_NAME
+import com.coderGtm.yantra.ankush.Ankush
 
 @SuppressLint("AccessibilityPolicy")
 class YantraAccessibilityService : AccessibilityService() {
@@ -42,8 +45,21 @@ class YantraAccessibilityService : AccessibilityService() {
         }
     }
 
+    private val prefs: SharedPreferences by lazy {
+        getSharedPreferences(SHARED_PREFS_FILE_NAME, Context.MODE_PRIVATE)
+    }
+
     override fun onAccessibilityEvent(accessibilityEvent: AccessibilityEvent) {
-        // Ignore. Don't read any accessibility event.
+        // Ankush Guard: when enabled and locked, leaving to the Settings app bounces home.
+        if (accessibilityEvent.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        if (!Ankush.isGuard(prefs) || Ankush.isUnlocked(prefs)) return
+        val pkg = accessibilityEvent.packageName?.toString() ?: return
+        if (pkg in Ankush.GUARDED_PACKAGES) {
+            try {
+                performGlobalAction(GLOBAL_ACTION_HOME)
+            } catch (_: Exception) {
+            }
+        }
     }
 
     private fun performLockScreenAction() {
