@@ -34,6 +34,8 @@ import com.coderGtm.yantra.getUserName
 import com.coderGtm.yantra.getUserNamePrefix
 import com.coderGtm.yantra.isPro
 import com.coderGtm.yantra.models.Alias
+import com.coderGtm.yantra.ankush.Ankush
+import com.coderGtm.yantra.commands.alias.updateAliasList
 import com.coderGtm.yantra.models.AppBlock
 import com.coderGtm.yantra.models.ShortcutBlock
 import com.coderGtm.yantra.models.Suggestion
@@ -74,6 +76,11 @@ class Terminal(
     private val getSecondarySuggestions = preferenceObject.getBoolean("getSecondarySuggestions",true)
     
     private var commandQueue: MutableList<String> = mutableListOf()
+
+    // Ankush: password prompt state (next input is consumed as a password).
+    private enum class AnkushPrompt { HELP_PASSWORD, PASSWD_CURRENT, PASSWD_NEW, PASSWD_CONFIRM }
+    private var ankushPrompt: AnkushPrompt? = null
+    private var ankushNewPassword: String? = null
     private var cmdHistoryCursor = -1
     private var commandCache = mutableListOf<Map<String, BaseCommand>>()
 
@@ -127,13 +134,27 @@ class Terminal(
         suggestionJob?.cancel()
         suggestionJob = suggestionScope.launch {
             delay(75)
-            val snapshotCommands = commands.keys.toSet()
-            val snapshotAliases = aliasList.associate { it.key to it.value }
+            // Ankush: never suggest anything while a password is being typed.
+            if (ankushPrompt != null) {
+                binding.suggestionsTab.removeAllViews()
+                return@launch
+            }
+            // Ankush: suggest renamed commands under their new names, hide original names
+            // of renamed commands, and keep (time-locked) aliases out of suggestions.
+            val ankushRenames = Ankush.getRenames(preferenceObject) // original -> custom
+            val ankushReverse = ankushRenames.entries.associate { it.value to it.key } // custom -> original
+            val aliasKeys = aliasList.map { it.key }.toSet()
+            val snapshotCommands = commands.keys.filter { it !in ankushRenames }.toSet()
+            val snapshotAliases = ankushReverse
             val state = buildSuggestionState()
             val sources = TerminalSuggestionSources(this@Terminal, state)
-            val orderedPrimary = primarySuggestions.filter { !it.isHidden }.map { it.text }
+            val orderedPrimary = primarySuggestions
+                .filter { !it.isHidden && it.text !in aliasKeys }
+                .map { ankushRenames[it.text] ?: it.text }
             // Preserve the old "contacts not fetched yet" message for the call command.
             val firstToken = rawInput.trim().split(" ").firstOrNull()
+            val firstLower = firstToken?.lowercase()
+            val blockSecondary = firstLower != null && firstLower in ankushRenames && firstLower !in ankushReverse
             val effectiveFirst = if (firstToken != null) snapshotAliases[firstToken] ?: firstToken.lowercase() else null
             if (effectiveFirst == "call" && !contactsFetched && secondaryEnabled) {
                 binding.suggestionsTab.removeAllViews()
@@ -154,7 +175,7 @@ class Terminal(
                     aliases = snapshotAliases,
                     sources = sources,
                     primarySuggestionsEnabled = primaryEnabled,
-                    secondarySuggestionsEnabled = secondaryEnabled,
+                    secondarySuggestionsEnabled = secondaryEnabled && !blockSecondary,
                     orderedPrimarySuggestions = orderedPrimary,
                 )
             }
@@ -557,14 +578,21 @@ class Terminal(
             commandQueue.add(command)
             return
         }
+        // Ankush: a pending password prompt consumes this input (never echoed or stored).
+        if (!isAlias && ankushPrompt != null) {
+            handleAnkushPromptInput(command)
+            return
+        }
         val commandName = command.trim().split(" ").firstOrNull()
+        // Ankush: hidden management commands (not in help/suggestions, not kept in history).
+        if (!isAlias && commandName != null && commandName.lowercase() in Ankush.MANAGEMENT_COMMANDS) {
+            if (logCmd) echoCommand(command)
+            handleAnkushCommand(command.trim())
+            return
+        }
         if (!isAlias) {
             if (logCmd && !NO_LOG_COMMANDS.contains(commandName?.lowercase())) {
-                if (preferenceObject.getBoolean("useModernPromptDesign", false)) {
-                    addChatBubble(getUserName(preferenceObject), command)
-                } else {
-                    output(getUserNamePrefix(preferenceObject)+getUserName(preferenceObject)+"> $command", theme.commandColor, null)
-                }
+                echoCommand(command)
             }
             if (command.trim()!="") {
                 cmdHistory.add(command)
@@ -576,28 +604,242 @@ class Terminal(
         }
         commandName?.let { _ ->
             aliasList.find { it.key == commandName }?.let { alias ->
-                val newCommand = command.replaceFirst(commandName, alias.value)
+                // Ankush: aliases are time-locked. Type "<alias> <hour+minute>" (24h clock),
+                // e.g. at 01:02 "fk 3". Without the right code it acts like an unknown command.
+                val parts = command.trim().split(" ").filter { it.isNotEmpty() }
+                val rest: List<String>
+                if (isAlias) {
+                    rest = parts.drop(1) // alias used inside another alias: already unlocked
+                } else {
+                    val code = parts.getOrNull(1)?.toIntOrNull()
+                    if (code == null || code !in Ankush.acceptedTimeCodes()) {
+                        showNotRecognized(commandName.toString())
+                        return@handleCommand
+                    }
+                    rest = parts.drop(2)
+                }
+                val newCommand = (listOf(alias.value.trim()) + rest).joinToString(" ")
                 handleCommand(newCommand, true)
                 return@handleCommand
             }
         }
-        val commandInstance = getCommandInstance(commandName.toString().lowercase())
+        // Ankush: resolve renamed commands. The custom name runs the original command,
+        // and the original name stops working (except inside aliases).
+        var effectiveCommand = command.trim()
+        var effectiveName = commandName.toString().lowercase()
+        val renames = Ankush.getRenames(preferenceObject)
+        if (renames.isNotEmpty() && commandName != null) {
+            val original = renames.entries.firstOrNull { it.value == effectiveName }?.key
+            if (original != null) {
+                effectiveCommand = original + effectiveCommand.substring(commandName.length)
+                effectiveName = original
+            } else if (effectiveName in renames && !isAlias) {
+                showNotRecognized(commandName)
+                return
+            }
+        }
+        val commandInstance = getCommandInstance(effectiveName)
         if (commandInstance != null) {
-            commandInstance.execute(command.trim())
+            commandInstance.execute(effectiveCommand)
         }
         else {
             if (command.trim() == "") return
-            // find most similar command and recommend
-            var maxScore = 0.0
-            var matchingName = "help"
-            for (cmd in commands.keys) {
-                val score = findSimilarity(cmd, commandName)
-                if (score > maxScore) {
-                    matchingName = cmd
-                    maxScore = score
+            showNotRecognized(commandName.toString())
+        }
+    }
+
+    private fun echoCommand(command: String) {
+        if (preferenceObject.getBoolean("useModernPromptDesign", false)) {
+            addChatBubble(getUserName(preferenceObject), command)
+        } else {
+            output(getUserNamePrefix(preferenceObject)+getUserName(preferenceObject)+"> $command", theme.commandColor, null)
+        }
+    }
+
+    private fun showNotRecognized(commandName: String) {
+        // find most similar visible command name and recommend it
+        val renames = Ankush.getRenames(preferenceObject)
+        var maxScore = 0.0
+        var matchingName = renames["help"] ?: "help"
+        for (cmd in commands.keys.map { renames[it] ?: it }) {
+            val score = findSimilarity(cmd, commandName)
+            if (score > maxScore) {
+                matchingName = cmd
+                maxScore = score
+            }
+        }
+        output("$commandName is not a recognized command or alias. Did you mean $matchingName?", theme.errorTextColor, null)
+    }
+
+    // ---------------- Ankush personal commands ----------------
+
+    private fun handleAnkushCommand(command: String) {
+        val args = command.split(" ").filter { it.isNotEmpty() }
+        when (args[0].lowercase()) {
+            Ankush.HELP_COMMAND -> startAnkushPrompt(AnkushPrompt.HELP_PASSWORD, "Enter password:")
+            Ankush.PASSWD_COMMAND -> startAnkushPrompt(AnkushPrompt.PASSWD_CURRENT, "Enter current password:")
+            Ankush.RENAME_COMMAND -> ankushRename(args)
+            Ankush.RESET_COMMAND -> ankushReset(args)
+        }
+    }
+
+    private fun startAnkushPrompt(prompt: AnkushPrompt, message: String) {
+        ankushPrompt = prompt
+        output(message, theme.warningTextColor, null)
+        activity.runOnUiThread { binding.cmdInput.setPasswordMode(true) }
+    }
+
+    private fun endAnkushPrompt() {
+        ankushPrompt = null
+        ankushNewPassword = null
+        activity.runOnUiThread { binding.cmdInput.setPasswordMode(false) }
+    }
+
+    private fun handleAnkushPromptInput(input: String) {
+        val value = input.trim()
+        when (ankushPrompt) {
+            AnkushPrompt.HELP_PASSWORD -> {
+                endAnkushPrompt()
+                if (Ankush.checkPassword(preferenceObject, value)) {
+                    showAnkushHelp()
+                } else {
+                    output("Wrong password.", theme.errorTextColor, null)
                 }
             }
-            output("$commandName is not a recognized command or alias. Did you mean $matchingName?", theme.errorTextColor, null)
+            AnkushPrompt.PASSWD_CURRENT -> {
+                if (Ankush.checkPassword(preferenceObject, value)) {
+                    ankushPrompt = AnkushPrompt.PASSWD_NEW
+                    output("Enter new password:", theme.warningTextColor, null)
+                } else {
+                    endAnkushPrompt()
+                    output("Wrong password.", theme.errorTextColor, null)
+                }
+            }
+            AnkushPrompt.PASSWD_NEW -> {
+                if (value.length < 4) {
+                    endAnkushPrompt()
+                    output("Password must be at least 4 characters. Nothing changed.", theme.errorTextColor, null)
+                } else {
+                    ankushNewPassword = value
+                    ankushPrompt = AnkushPrompt.PASSWD_CONFIRM
+                    output("Type the new password again:", theme.warningTextColor, null)
+                }
+            }
+            AnkushPrompt.PASSWD_CONFIRM -> {
+                val newPassword = ankushNewPassword
+                endAnkushPrompt()
+                if (newPassword != null && newPassword == value) {
+                    Ankush.setPassword(preferenceObject, newPassword)
+                    output("Password changed.", theme.successTextColor, null)
+                } else {
+                    output("Passwords did not match. Nothing changed.", theme.errorTextColor, null)
+                }
+            }
+            null -> {}
+        }
+    }
+
+    private fun showAnkushHelp() {
+        val renames = Ankush.getRenames(preferenceObject)
+        output("Ankush command map", theme.warningTextColor, Typeface.BOLD_ITALIC)
+        output("-------------------------", theme.warningTextColor, null)
+        if (renames.isEmpty()) {
+            output("No commands renamed.", theme.resultTextColor, null)
+        } else {
+            renames.toSortedMap().forEach { (original, custom) ->
+                output("$original  ->  $custom   ('$original' disabled)", theme.successTextColor, null)
+            }
+        }
+        output("-------------------------", theme.warningTextColor, null)
+        output("Aliases (type: <alias> <hour+minute>, 24h clock)", theme.warningTextColor, Typeface.BOLD)
+        if (aliasList.isEmpty()) {
+            output("No aliases.", theme.resultTextColor, null)
+        } else {
+            aliasList.sortedBy { it.key }.forEach {
+                output("${it.key}  =  ${it.value}", theme.resultTextColor, null)
+            }
+        }
+        output("-------------------------", theme.warningTextColor, null)
+        output("Unchanged commands: " + commands.keys.filter { it !in renames }.sorted().joinToString(", "), theme.resultTextColor, null)
+        output("-------------------------", theme.warningTextColor, null)
+        output("${Ankush.RENAME_COMMAND} <command> <new-name>  |  ${Ankush.RESET_COMMAND} <command|all>  |  ${Ankush.PASSWD_COMMAND}", theme.resultTextColor, null)
+    }
+
+    private fun ankushRename(args: List<String>) {
+        if (args.size != 3) {
+            output("Usage: ${Ankush.RENAME_COMMAND} <command> <new-name>   e.g. ${Ankush.RENAME_COMMAND} launch luck", theme.errorTextColor, null)
+            return
+        }
+        val renames = Ankush.getRenames(preferenceObject)
+        val reverse = renames.entries.associate { it.value to it.key }
+        val target = args[1].lowercase()
+        val newName = args[2].lowercase()
+        val original = when {
+            target in reverse -> reverse.getValue(target)
+            target in commands.keys -> target
+            else -> null
+        }
+        if (original == null) {
+            output("'$target' is not a command.", theme.errorTextColor, null)
+            return
+        }
+        val oldName = renames[original] ?: original
+        when {
+            newName == oldName -> output("Already called '$newName'.", theme.warningTextColor, null)
+            newName == original -> ankushApplyRename(original, null, oldName)
+            !Ankush.isValidName(newName) ->
+                output("New name must start with a letter and use only letters and digits.", theme.errorTextColor, null)
+            newName in commands.keys ->
+                output("'$newName' is a built-in command name. Pick something else.", theme.errorTextColor, null)
+            newName in reverse ->
+                output("'$newName' is already used by another command.", theme.errorTextColor, null)
+            aliasList.any { it.key.lowercase() == newName } ->
+                output("'$newName' is already an alias name.", theme.errorTextColor, null)
+            else -> ankushApplyRename(original, newName, oldName)
+        }
+    }
+
+    private fun ankushReset(args: List<String>) {
+        if (args.size != 2) {
+            output("Usage: ${Ankush.RESET_COMMAND} <command|all>", theme.errorTextColor, null)
+            return
+        }
+        val renames = Ankush.getRenames(preferenceObject)
+        val target = args[1].lowercase()
+        if (target == "all") {
+            renames.forEach { (original, custom) -> ankushApplyRename(original, null, custom, quiet = true) }
+            output("All commands restored to their original names.", theme.successTextColor, null)
+            return
+        }
+        val original = renames.entries.firstOrNull { it.value == target }?.key ?: target.takeIf { it in renames }
+        if (original == null) {
+            output("'$target' has not been renamed.", theme.warningTextColor, null)
+            return
+        }
+        ankushApplyRename(original, null, renames.getValue(original))
+    }
+
+    /** newName == null restores the original name. Aliases are updated to keep working. */
+    private fun ankushApplyRename(original: String, newName: String?, oldName: String, quiet: Boolean = false) {
+        val renames = Ankush.getRenames(preferenceObject)
+        if (newName == null) renames.remove(original) else renames[original] = newName
+        Ankush.saveRenames(preferenceObject, renames)
+        val currentName = newName ?: original
+        var aliasesChanged = false
+        for (i in aliasList.indices) {
+            val value = aliasList[i].value.trim()
+            val first = value.split(" ").firstOrNull() ?: continue
+            if (first.lowercase() == oldName || first.lowercase() == original) {
+                aliasList[i] = Alias(aliasList[i].key, currentName + value.substring(first.length))
+                aliasesChanged = true
+            }
+        }
+        if (aliasesChanged) updateAliasList(aliasList, preferenceObject.edit())
+        if (quiet) return
+        if (newName == null) {
+            output("'$original' restored to its original name.", theme.successTextColor, null)
+        } else {
+            output("Done. Use '$newName' from now on; '$oldName' no longer works.", theme.successTextColor, null)
         }
     }
 

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name" translatable="false">Yantra Launcher</string>
-    <string name="app_name_debug" translatable="false">Yantra Launcher Debug</string>
-    <string name="app_name_beta" translatable="false">Yantra Launcher Beta</string>
+    <string name="app_name" translatable="false">Ankush</string>
+    <string name="app_name_debug" translatable="false">Ankush</string>
+    <string name="app_name_beta" translatable="false">Ankush</string>
     <string name="package_name" translatable="false">com.coderGtm.yantra</string>
 </resources>

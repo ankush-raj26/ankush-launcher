@@ -414,6 +414,20 @@ class ComposeInputController {
         textColorInt = color
     }
 
+    // Ankush: hide typed characters while a password is being entered.
+    private var passwordMode = false
+
+    fun setPasswordMode(enabled: Boolean) {
+        passwordMode = enabled
+        editText?.let { applyPasswordMode(it) }
+    }
+
+    private fun applyPasswordMode(view: TerminalEditText) {
+        view.transformationMethod =
+            if (passwordMode) android.text.method.PasswordTransformationMethod.getInstance() else null
+        view.setSelection(view.text?.length ?: 0)
+    }
+
     fun setOnEditorActionListener(listener: (Any?, Int, Any?) -> Boolean) {
         editorActionListener = listener
         editText?.setOnEditorActionListener { _, actionId, event ->
@@ -429,6 +443,7 @@ class ComposeInputController {
         editText = view
         applyStyle(view)
         applyCursor(view)
+        applyPasswordMode(view)
         view.setText(pendingText)
         view.setSelection(pendingSelection.coerceIn(0, pendingText.length))
         inputText = pendingText
