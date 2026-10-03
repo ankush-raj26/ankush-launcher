@@ -21,9 +21,10 @@ object Ankush {
     const val DECOY_COMMAND = "ankush-decoy"
     const val PRIVACY_COMMAND = "ankush-privacy"
     const val ALIAS_LOCK_COMMAND = "ankush-alias"
+    const val OFFSET_COMMAND = "ankush-offset"
     val MANAGEMENT_COMMANDS = setOf(
         HELP_COMMAND, RENAME_COMMAND, RESET_COMMAND, PASSWD_COMMAND, DECOY_COMMAND, PRIVACY_COMMAND,
-        ALIAS_LOCK_COMMAND
+        ALIAS_LOCK_COMMAND, OFFSET_COMMAND
     )
 
     /** Built-in commands that only work while the alias lock is OFF. */
@@ -41,7 +42,7 @@ object Ankush {
     /** After a correct password, protected commands run without asking again for this long. */
     const val UNLOCK_WINDOW_MS = 60_000L
     /** ankush-help output is wiped from the screen after this long. */
-    const val HELP_AUTO_CLEAR_MS = 20_000L
+    const val HELP_AUTO_CLEAR_MS = 60_000L
     private const val MAX_FAILED_ATTEMPTS = 3
     private const val LOCKOUT_MS = 5 * 60_000L
 
@@ -57,6 +58,9 @@ object Ankush {
     private const val PREF_LOCKED_UNTIL = "ankushLockedUntil"
     private const val PREF_EXTRA_PRIVACY = "ankushExtraPrivacy"
     private const val PREF_ALIAS_LOCK = "ankushAliasLock"
+    private const val PREF_OFFSET = "ankushTimeCodeOffset"
+    const val DEFAULT_OFFSET = 5
+    const val MAX_OFFSET = 99
     private const val DEFAULT_PASSWORD = "spytro26"
 
     private val NAME_REGEX = Regex("^[a-z][a-z0-9]*$")
@@ -89,25 +93,32 @@ object Ankush {
 
     /**
      * Alias time code, 12-hour clock (hour 1-12, so 12 AM/PM counts as 12):
-     *   ((hour + 1) + (minute + 1)) / 2, decimals dropped, then + 5.
-     * Examples: 1:02 -> (2 + 3) / 2 = 2.5 -> 2 -> 7
-     *           1:45 PM -> (2 + 46) / 2 = 24 -> 29
-     *           12:30 -> (13 + 31) / 2 = 22 -> 27
+     *   ((hour + 1) + (minute + 1)) / 2, decimals dropped, then + offset (default 5).
+     * Examples with offset 5: 1:02 -> (2 + 3) / 2 = 2.5 -> 2 -> 7
+     *                         1:45 PM -> (2 + 46) / 2 = 24 -> 29
+     *                         12:30 -> (13 + 31) / 2 = 22 -> 27
      */
-    fun timeCode(calendar: Calendar = Calendar.getInstance()): Int {
+    fun timeCode(offset: Int, calendar: Calendar = Calendar.getInstance()): Int {
         val hour12 = calendar.get(Calendar.HOUR).let { if (it == 0) 12 else it }
         val minute = calendar.get(Calendar.MINUTE)
-        return ((hour12 + 1) + (minute + 1)) / 2 + 5  // integer division drops the .5
+        return ((hour12 + 1) + (minute + 1)) / 2 + offset  // integer division drops the .5
+    }
+
+    fun getOffset(prefs: SharedPreferences): Int = prefs.getInt(PREF_OFFSET, DEFAULT_OFFSET)
+
+    fun setOffset(prefs: SharedPreferences, offset: Int) {
+        prefs.edit().putInt(PREF_OFFSET, offset).apply()
     }
 
     /**
      * Codes accepted right now: the current minute, plus the previous minute as a
      * small grace period in case the clock ticks over while you are typing.
      */
-    fun acceptedTimeCodes(): Set<Int> {
+    fun acceptedTimeCodes(prefs: SharedPreferences): Set<Int> {
+        val offset = getOffset(prefs)
         val now = Calendar.getInstance()
         val previous = (now.clone() as Calendar).apply { add(Calendar.MINUTE, -1) }
-        return setOf(timeCode(now), timeCode(previous))
+        return setOf(timeCode(offset, now), timeCode(offset, previous))
     }
 
     // ---------- passwords ----------

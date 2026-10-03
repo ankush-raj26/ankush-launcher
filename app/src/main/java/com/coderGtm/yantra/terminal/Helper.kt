@@ -62,7 +62,6 @@ fun getAvailableCommands(activity: Activity): Map<String,  Class<out BaseCommand
         return mapOf(
             "launch" to com.coderGtm.yantra.commands.launch.Command::class.java,
             "help" to com.coderGtm.yantra.commands.help.Command::class.java,
-            "community" to com.coderGtm.yantra.commands.community.Command::class.java,
             "theme" to com.coderGtm.yantra.commands.theme.Command::class.java,
             "call" to com.coderGtm.yantra.commands.call.Command::class.java,
             "bluetooth" to com.coderGtm.yantra.commands.bluetooth.Command::class.java,
@@ -80,7 +79,6 @@ fun getAvailableCommands(activity: Activity): Map<String,  Class<out BaseCommand
             "open" to com.coderGtm.yantra.commands.open.Command::class.java,
             "search" to com.coderGtm.yantra.commands.search.Command::class.java,
             "web" to com.coderGtm.yantra.commands.web.Command::class.java,
-            "wiki" to com.coderGtm.yantra.commands.wiki.Command::class.java,
             "gupt" to com.coderGtm.yantra.commands.gupt.Command::class.java,
             "tts" to com.coderGtm.yantra.commands.tts.Command::class.java,
             "sfx" to com.coderGtm.yantra.commands.sfx.Command::class.java,
@@ -123,9 +121,6 @@ fun getAvailableCommands(activity: Activity): Map<String,  Class<out BaseCommand
             "lock" to com.coderGtm.yantra.commands.lock.Command::class.java,
             "clear" to com.coderGtm.yantra.commands.clear.Command::class.java,
             "reset" to com.coderGtm.yantra.commands.reset.Command::class.java,
-            "cmdrequest" to com.coderGtm.yantra.commands.cmdrequest.Command::class.java,
-            "feedback" to com.coderGtm.yantra.commands.feedback.Command::class.java,
-            "support" to com.coderGtm.yantra.commands.support.Command::class.java,
             "exit" to com.coderGtm.yantra.commands.exit.Command::class.java,
         )
     }
@@ -133,19 +128,16 @@ fun getAvailableCommands(activity: Activity): Map<String,  Class<out BaseCommand
         return mapOf(
             "launch" to com.coderGtm.yantra.commands.launch.Command::class.java,
             "help" to com.coderGtm.yantra.commands.help.Command::class.java,
-            "community" to com.coderGtm.yantra.commands.community.Command::class.java,
             "call" to com.coderGtm.yantra.commands.call.Command::class.java,
             "bluetooth" to com.coderGtm.yantra.commands.bluetooth.Command::class.java,
             "flash" to com.coderGtm.yantra.commands.flash.Command::class.java,
             "alias" to com.coderGtm.yantra.commands.alias.Command::class.java,
             "weather" to com.coderGtm.yantra.commands.weather.Command::class.java,
             "search" to com.coderGtm.yantra.commands.search.Command::class.java,
-            "wiki" to com.coderGtm.yantra.commands.wiki.Command::class.java,
             "username" to com.coderGtm.yantra.commands.username.Command::class.java,
             "time" to com.coderGtm.yantra.commands.time.Command::class.java,
             "settings" to com.coderGtm.yantra.commands.settings.Command::class.java,
             "sysinfo" to com.coderGtm.yantra.commands.sysinfo.Command::class.java,
-            "pro" to com.coderGtm.yantra.commands.pro.Command::class.java,
             "quote" to com.coderGtm.yantra.commands.quote.Command::class.java,
             "text" to com.coderGtm.yantra.commands.text.Command::class.java,
             "tts" to com.coderGtm.yantra.commands.tts.Command::class.java,
@@ -160,9 +152,6 @@ fun getAvailableCommands(activity: Activity): Map<String,  Class<out BaseCommand
             "lock" to com.coderGtm.yantra.commands.lock.Command::class.java,
             "clear" to com.coderGtm.yantra.commands.clear.Command::class.java,
             "reset" to com.coderGtm.yantra.commands.reset.Command::class.java,
-            "cmdrequest" to com.coderGtm.yantra.commands.cmdrequest.Command::class.java,
-            "feedback" to com.coderGtm.yantra.commands.feedback.Command::class.java,
-            "support" to com.coderGtm.yantra.commands.support.Command::class.java,
             "exit" to com.coderGtm.yantra.commands.exit.Command::class.java,
         )
     }

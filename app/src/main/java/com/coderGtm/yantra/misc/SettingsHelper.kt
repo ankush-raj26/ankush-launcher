@@ -155,19 +155,8 @@ fun changedSettingsCallback(activity: Activity) {
 }
 
 fun openDoubleTapActionSetter(activity: Activity, preferenceObject: SharedPreferences, preferenceEditObject: Editor) {
-    val doubleTapActionDialog = YantraLauncherDialog(activity)
-    doubleTapActionDialog.takeInput(
-        title = activity.getString(R.string.change_double_tap_command),
-        message = activity.getString(R.string.double_tap_command_description),
-        initialInput = preferenceObject.getString("doubleTapCommand","lock")!!,
-        positiveButton = activity.getString(R.string.save),
-        positiveAction = {
-            val command = it
-            preferenceEditObject.putString("doubleTapCommand",command.trim()).apply()
-            toast(activity, activity.getString(R.string.double_tap_command_updated))
-            changedSettingsCallback(activity)
-        },
-    )
+    // Ankush: double tap is fixed to "clear screen + screen off".
+    toast(activity, "Double tap always turns the screen off in this build.")
 }
 
 fun openSwipeRightActionSetter(activity: Activity, preferenceObject: SharedPreferences, preferenceEditObject: Editor) {

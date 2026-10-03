@@ -38,11 +38,8 @@ import com.coderGtm.yantra.commands.alias.updateAliasList
 import com.coderGtm.yantra.models.AppBlock
 import com.coderGtm.yantra.models.ShortcutBlock
 import com.coderGtm.yantra.models.Suggestion
-import com.coderGtm.yantra.promoteProVersion
 import com.coderGtm.yantra.requestCmdInputFocusAndShowKeyboard
-import com.coderGtm.yantra.requestUpdateIfAvailable
 import com.coderGtm.yantra.runInitTasks
-import com.coderGtm.yantra.showRatingAndCommunityPopups
 import com.coderGtm.yantra.suggestions.CompletionInput
 import com.coderGtm.yantra.suggestions.CompletionResult
 import com.coderGtm.yantra.suggestions.SuggestionEngine
@@ -305,9 +302,7 @@ class Terminal(
                 contactsManager(this)
             }.start()
         }
-        Thread {
-            requestUpdateIfAvailable(preferenceObject, activity)
-        }.start()
+        // Ankush: no Play Store update checks (could pull in the original app).
     }
 
     private fun enforceThemeComponents() {
@@ -611,8 +606,6 @@ class Terminal(
                     cmdHistoryCursor = cmdHistory.size
                 }
                 incrementNumOfCommandsEntered(preferenceObject, preferenceObject.edit())
-                showRatingAndCommunityPopups(preferenceObject, preferenceObject.edit(), activity)
-                promoteProVersion(this@Terminal, preferenceObject)
             }
         }
         commandName?.let { _ ->
@@ -626,10 +619,10 @@ class Terminal(
                 } else if (!Ankush.isAliasLock(preferenceObject)) {
                     // alias lock OFF: no code needed (a correct code is still accepted and dropped)
                     val code = parts.getOrNull(1)?.toIntOrNull()
-                    rest = if (code != null && code in Ankush.acceptedTimeCodes()) parts.drop(2) else parts.drop(1)
+                    rest = if (code != null && code in Ankush.acceptedTimeCodes(preferenceObject)) parts.drop(2) else parts.drop(1)
                 } else {
                     val code = parts.getOrNull(1)?.toIntOrNull()
-                    if (code == null || code !in Ankush.acceptedTimeCodes()) {
+                    if (code == null || code !in Ankush.acceptedTimeCodes(preferenceObject)) {
                         showNotRecognized(commandName.toString())
                         return@handleCommand
                     }
@@ -705,6 +698,22 @@ class Terminal(
         }
     }
 
+    /** Double tap on the home screen: wipe the screen, re-lock, and turn the display off. */
+    fun ankushDoubleTapLock() {
+        endAnkushPrompt()
+        ankushUnlockedUntil = 0L
+        activity.runOnUiThread {
+            ankushHandler.removeCallbacks(ankushClearScreen)
+            binding.terminalOutput.removeAllViews()
+            binding.cmdInput.setText("")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                com.coderGtm.yantra.commands.lock.lockDeviceByAccessibilityService(activity)
+            } else {
+                com.coderGtm.yantra.commands.lock.lockDeviceByAdmin(activity)
+            }
+        }
+    }
+
     private fun applyExtraPrivacy() {
         val enabled = Ankush.isExtraPrivacy(preferenceObject)
         activity.runOnUiThread {
@@ -726,8 +735,8 @@ class Terminal(
      * Runs [action] right away if unlocked, otherwise asks for the password first.
      * stealth = true: looks exactly like an unknown command, then silently waits for the password.
      */
-    private fun requireAuth(stealth: Boolean, triggerName: String, action: () -> Unit) {
-        if (isAnkushUnlocked()) {
+    private fun requireAuth(stealth: Boolean, triggerName: String, alwaysAsk: Boolean = false, action: () -> Unit) {
+        if (!alwaysAsk && isAnkushUnlocked()) {
             action()
             return
         }
@@ -757,7 +766,9 @@ class Terminal(
             Ankush.RESET_COMMAND -> requireAuth(true, name) { ankushReset(args) }
             Ankush.DECOY_COMMAND -> requireAuth(true, name) { ankushDecoy(args) }
             Ankush.PRIVACY_COMMAND -> requireAuth(true, name) { ankushPrivacy(args) }
-            Ankush.ALIAS_LOCK_COMMAND -> requireAuth(true, name) { ankushAliasLock(args) }
+            // switching the alias lock always asks for the password, even inside the unlock window
+            Ankush.ALIAS_LOCK_COMMAND -> requireAuth(true, name, alwaysAsk = true) { ankushAliasLock(args) }
+            Ankush.OFFSET_COMMAND -> requireAuth(true, name) { ankushOffset(args) }
         }
     }
 
@@ -875,35 +886,104 @@ class Terminal(
 
     /** decoy = true shows a harmless fake list: nothing renamed, no aliases. */
     private fun showAnkushHelp(decoy: Boolean) {
-        val renames: Map<String, String> = if (decoy) emptyMap() else Ankush.getRenames(preferenceObject)
-        val aliases = if (decoy) emptyList() else aliasList.sortedBy { it.key }
-        output("Ankush command map", theme.warningTextColor, Typeface.BOLD_ITALIC)
-        output("-------------------------", theme.warningTextColor, null)
+        val head = theme.warningTextColor
+        val body = theme.resultTextColor
+        val good = theme.successTextColor
+        val line = "-------------------------"
+        fun h(text: String) = output(text, head, Typeface.BOLD)
+        fun t(text: String) = output(text, body, null)
+
+        if (decoy) {
+            h("Command map")
+            t(line)
+            t("No commands renamed.")
+            t("No aliases.")
+            scheduleAnkushHelpClear()
+            return
+        }
+
+        val prefs = preferenceObject
+        val renames = Ankush.getRenames(prefs)
+        val aliases = aliasList.sortedBy { it.key }
+        val aliasLock = Ankush.isAliasLock(prefs)
+        val offset = Ankush.getOffset(prefs)
+        val example = (2 + 3) / 2 + offset // 1:02 -> ((1+1)+(2+1))/2 = 2, + offset
+        fun onOff(b: Boolean) = if (b) "ON" else "OFF"
+
+        output("ANKUSH - your private setup", good, Typeface.BOLD_ITALIC)
+        t(line)
+
+        h("STATUS (things you can toggle)")
+        t("Alias lock ........ ${onOff(aliasLock)}   -> ${Ankush.ALIAS_LOCK_COMMAND} on|off")
+        t("Time-code offset .. $offset    -> ${Ankush.OFFSET_COMMAND} <0-${Ankush.MAX_OFFSET}>")
+        t("Extra privacy ..... ${onOff(Ankush.isExtraPrivacy(prefs))}  -> ${Ankush.PRIVACY_COMMAND} on|off")
+        t("Decoy password .... ${if (Ankush.hasDecoyPassword(prefs)) "set" else "not set"}  -> ${Ankush.DECOY_COMMAND} / ${Ankush.DECOY_COMMAND} off")
+        t(line)
+
+        h("RENAMED COMMANDS")
         if (renames.isEmpty()) {
-            output("No commands renamed.", theme.resultTextColor, null)
+            t("None yet. Example: ${Ankush.RENAME_COMMAND} launch luck")
         } else {
             renames.toSortedMap().forEach { (original, custom) ->
-                output("$original  ->  $custom   ('$original' disabled)", theme.successTextColor, null)
+                output("$original  ->  $custom", good, null)
             }
+            val (o, c) = renames.toSortedMap().entries.first().let { it.key to it.value }
+            t("Use the new name, e.g. '$c ...' instead of '$o ...'.")
+            t(if (aliasLock) "Old names are disabled while the alias lock is ON." else "Alias lock is OFF: old names work too.")
         }
-        output("-------------------------", theme.warningTextColor, null)
-        output("Aliases (type: <alias> <time code>)", theme.warningTextColor, Typeface.BOLD)
+        t(line)
+
+        h("ALIASES")
         if (aliases.isEmpty()) {
-            output("No aliases.", theme.resultTextColor, null)
+            t("None yet. Create one: alias fk=luck whatsapp")
         } else {
-            aliases.forEach { output("${it.key}  =  ${it.value}", theme.resultTextColor, null) }
+            aliases.forEach { output("${it.key}  =  ${it.value}", good, null) }
         }
-        output("-------------------------", theme.warningTextColor, null)
-        output("Unchanged commands: " + commands.keys.filter { it !in renames }.sorted().joinToString(", "), theme.resultTextColor, null)
-        output("Password-protected: " + Ankush.PROTECTED_COMMANDS.sorted().joinToString(", "), theme.resultTextColor, null)
-        if (!decoy) {
-            output("Alias lock: " + if (Ankush.isAliasLock(preferenceObject)) "ON" else "OFF", theme.resultTextColor, null)
-            output("Extra privacy (block screenshots): " + if (Ankush.isExtraPrivacy(preferenceObject)) "ON" else "OFF", theme.resultTextColor, null)
-            output("Decoy password: " + if (Ankush.hasDecoyPassword(preferenceObject)) "set" else "not set", theme.resultTextColor, null)
+        if (aliasLock) {
+            t("Type: <alias> <time code>, e.g. ${aliases.firstOrNull()?.key ?: "fk"} $example at 1:02")
+        } else {
+            t("Alias lock is OFF: just type the alias, e.g. ${aliases.firstOrNull()?.key ?: "fk"}")
         }
-        output("-------------------------", theme.warningTextColor, null)
-        output("${Ankush.RENAME_COMMAND} <command> <new-name> | ${Ankush.RESET_COMMAND} <command|all> | ${Ankush.PASSWD_COMMAND} | ${Ankush.DECOY_COMMAND} [off] | ${Ankush.PRIVACY_COMMAND} on|off | ${Ankush.ALIAS_LOCK_COMMAND} on|off", theme.resultTextColor, null)
-        output("(This list clears itself in ${Ankush.HELP_AUTO_CLEAR_MS / 1000} seconds.)", theme.resultTextColor, null)
+        t("Create: alias fk=luck whatsapp   Remove: unalias fk   (both ask the password)")
+        t(line)
+
+        h("TIME CODE (12-hour clock)")
+        t("((hour + 1) + (minute + 1)) / 2, drop any .5, then + $offset")
+        t("Example 1:02 -> (2 + 3) / 2 = 2.5 -> 2 -> 2 + $offset = $example")
+        t("The previous minute's code also works. AM and PM give the same code.")
+        t(line)
+
+        h("YOUR HIDDEN COMMANDS")
+        t("Each one first says 'not recognized'. Then type your password.")
+        t("${Ankush.HELP_COMMAND} .............. this screen")
+        t("${Ankush.RENAME_COMMAND} <cmd> <new> . e.g. ${Ankush.RENAME_COMMAND} launch luck")
+        t("${Ankush.RESET_COMMAND} <name|all> .. e.g. ${Ankush.RESET_COMMAND} luck")
+        t("${Ankush.ALIAS_LOCK_COMMAND} on|off ...... strict / relaxed (always asks password)")
+        t("${Ankush.OFFSET_COMMAND} <n> .......... e.g. ${Ankush.OFFSET_COMMAND} 9")
+        t("${Ankush.PASSWD_COMMAND} ............ change your password")
+        t("${Ankush.DECOY_COMMAND} [off] ....... set / remove decoy password")
+        t("${Ankush.PRIVACY_COMMAND} on|off .... block screenshots + recents preview")
+        t(line)
+
+        h("SEE YANTRA'S NORMAL COMMANDS")
+        t("1) ${Ankush.ALIAS_LOCK_COMMAND} off   2) help  (or: help launch)   3) ${Ankush.ALIAS_LOCK_COMMAND} on")
+        t(line)
+
+        h("PASSWORD-PROTECTED COMMANDS")
+        t(Ankush.PROTECTED_COMMANDS.sorted().joinToString(", "))
+        t(line)
+
+        h("ALWAYS ON")
+        t("No suggestions, no history, commands not shown on screen.")
+        t("Screen clears when you leave the launcher. Double tap = screen off.")
+        t("After a correct password, protected commands stay unlocked for 60 s.")
+        t("3 wrong passwords = 5 minute lockout.")
+        t(line)
+        t("(This screen clears itself in ${Ankush.HELP_AUTO_CLEAR_MS / 1000} seconds.)")
+        scheduleAnkushHelpClear()
+    }
+
+    private fun scheduleAnkushHelpClear() {
         activity.runOnUiThread {
             ankushHandler.removeCallbacks(ankushClearScreen)
             ankushHandler.postDelayed(ankushClearScreen, Ankush.HELP_AUTO_CLEAR_MS)
@@ -933,6 +1013,21 @@ class Terminal(
         applyExtraPrivacy()
         val on = Ankush.isExtraPrivacy(preferenceObject)
         output("Extra privacy is " + (if (on) "ON: screenshots and the recent-apps preview are blocked." else "OFF."), theme.successTextColor, null)
+    }
+
+    private fun ankushOffset(args: List<String>) {
+        val arg = args.getOrNull(1)
+        if (arg == null) {
+            output("Time-code offset is ${Ankush.getOffset(preferenceObject)}.", theme.successTextColor, null)
+            return
+        }
+        val value = arg.toIntOrNull()
+        if (value == null || value < 0 || value > Ankush.MAX_OFFSET) {
+            output("Usage: ${Ankush.OFFSET_COMMAND} <0-${Ankush.MAX_OFFSET}>   e.g. ${Ankush.OFFSET_COMMAND} 9", theme.errorTextColor, null)
+            return
+        }
+        Ankush.setOffset(preferenceObject, value)
+        output("Time-code offset set to $value. Alias codes now end with + $value.", theme.successTextColor, null)
     }
 
     private fun ankushAliasLock(args: List<String>) {

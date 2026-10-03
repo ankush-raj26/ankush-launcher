@@ -15,11 +15,9 @@ import com.coderGtm.yantra.YantraLauncher
 import com.coderGtm.yantra.activities.MainActivity
 import com.coderGtm.yantra.commands.termux.handleTermuxResult
 import com.coderGtm.yantra.getInit
-import com.coderGtm.yantra.informOfProVersionIfOldUser
 import com.coderGtm.yantra.isPro
 import com.coderGtm.yantra.listeners.TermuxCommandResultReceiver
 import com.coderGtm.yantra.requestCmdInputFocusAndShowKeyboard
-import com.coderGtm.yantra.requestUpdateIfAvailable
 import com.coderGtm.yantra.runInitTasks
 import com.coderGtm.yantra.services.TermuxCommandService
 import com.coderGtm.yantra.setProStatus
@@ -70,7 +68,6 @@ internal class MainActivityCoordinator(
             preferenceObject = app.preferenceObject,
         )
         terminal.initialize()
-        informOfProVersionIfOldUser(activity)
 
         LocalBroadcastManager.getInstance(activity).registerReceiver(
             termuxCommandResultReceiver,
@@ -114,9 +111,7 @@ internal class MainActivityCoordinator(
     }
 
     fun onRestart() {
-        Thread {
-            requestUpdateIfAvailable(app.preferenceObject, activity)
-        }.start()
+        // Ankush: no Play Store update checks.
     }
 
     fun onResume() {
@@ -138,10 +133,8 @@ internal class MainActivityCoordinator(
     }
 
     fun onDoubleTap() {
-        val cmdToExecute = app.preferenceObject.getString("doubleTapCommand", "lock")
-        if (MainActivityBehavior.shouldHandleCommand(cmdToExecute)) {
-            terminal.handleCommand(cmdToExecute!!)
-        }
+        // Ankush: double tap always clears the screen and turns it off (independent of renames).
+        terminal.ankushDoubleTapLock()
     }
 
     fun onSwipeRight() {
