@@ -32,6 +32,7 @@ import com.coderGtm.yantra.misc.openAiApiProviderSetter
 import com.coderGtm.yantra.misc.openAiModelSetter
 import com.coderGtm.yantra.misc.openAiSystemPromptSetter
 import com.coderGtm.yantra.misc.openAppSugOrderingSetter
+import com.coderGtm.yantra.misc.openAnkushOffsetSetter
 import com.coderGtm.yantra.misc.openArrowSizeSetter
 import com.coderGtm.yantra.misc.openDoubleTapActionSetter
 import com.coderGtm.yantra.misc.openFontSizeSetter
@@ -58,6 +59,7 @@ import com.coderGtm.yantra.ui.settings.groups.DisplayGroup
 import com.coderGtm.yantra.ui.settings.groups.FontGroup
 import com.coderGtm.yantra.ui.settings.groups.GesturesGroup
 import com.coderGtm.yantra.ui.settings.groups.KeyboardGroup
+import com.coderGtm.yantra.ui.settings.groups.AnkushGroup
 import com.coderGtm.yantra.ui.settings.groups.OtherGroup
 import com.coderGtm.yantra.ui.settings.groups.PromptGroup
 import com.coderGtm.yantra.ui.settings.groups.SuggestionsGroup
@@ -95,6 +97,11 @@ class SettingsActivity : AppCompatActivity() {
     internal var fontName                    by mutableStateOf(DEFAULT_TERMINAL_FONT_NAME)
     internal var localeDisplayName           by mutableStateOf("English")
     private var usernamePrefix               by mutableStateOf("$")
+    // Ankush private controls
+    private var ankushAliasLock              by mutableStateOf(true)
+    private var ankushExtraPrivacy           by mutableStateOf(false)
+    private var ankushGuard                  by mutableStateOf(false)
+    private var ankushOffsetText             by mutableStateOf("5")
 
     private val isProUser by lazy { isPro(this) }
 
@@ -199,6 +206,10 @@ class SettingsActivity : AppCompatActivity() {
         appSugOrderText                  = getAppSugOrderText(this, preferenceObject.getInt("appSortMode", AppSortMode.A_TO_Z.value))
         fontName                         = if (isProUser) preferenceObject.getString("font", DEFAULT_TERMINAL_FONT_NAME) ?: DEFAULT_TERMINAL_FONT_NAME else DEFAULT_TERMINAL_FONT_NAME
         usernamePrefix                   = getUserNamePrefix(preferenceObject)
+        ankushAliasLock                  = com.coderGtm.yantra.ankush.Ankush.isAliasLock(preferenceObject)
+        ankushExtraPrivacy               = com.coderGtm.yantra.ankush.Ankush.isExtraPrivacy(preferenceObject)
+        ankushGuard                      = com.coderGtm.yantra.ankush.Ankush.isGuard(preferenceObject)
+        ankushOffsetText                 = com.coderGtm.yantra.ankush.Ankush.getOffset(preferenceObject).toString()
         localeDisplayName                = supportedLocales.filterValues { it == AppCompatDelegate.getApplicationLocales().toLanguageTags() }.keys.firstOrNull() ?: "English"
 
         setContent {
@@ -298,6 +309,26 @@ class SettingsActivity : AppCompatActivity() {
                 localeDisplayName        = localeDisplayName,
                 onOpenLanguagePicker     = { openLanguagePicker() },
                 onOpenLauncherSelection  = { openLauncherSelection(this@SettingsActivity) }
+            )
+
+            AnkushGroup(
+                aliasLock            = ankushAliasLock,
+                onAliasLockChange    = { ankushAliasLock = it; com.coderGtm.yantra.ankush.Ankush.setAliasLock(preferenceObject, it); changedSettingsCallback(this@SettingsActivity) },
+                extraPrivacy         = ankushExtraPrivacy,
+                onExtraPrivacyChange = { ankushExtraPrivacy = it; com.coderGtm.yantra.ankush.Ankush.setExtraPrivacy(preferenceObject, it); changedSettingsCallback(this@SettingsActivity) },
+                guard                = ankushGuard,
+                onGuardChange        = {
+                    if (it && !com.coderGtm.yantra.commands.lock.isAccessibilityServiceEnabled(this@SettingsActivity)) {
+                        Toast.makeText(this@SettingsActivity, "Turn on Ankush under Accessibility first.", Toast.LENGTH_LONG).show()
+                        startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    } else {
+                        ankushGuard = it
+                        com.coderGtm.yantra.ankush.Ankush.setGuard(preferenceObject, it)
+                        changedSettingsCallback(this@SettingsActivity)
+                    }
+                },
+                offsetText           = ankushOffsetText,
+                onOpenOffsetSetter   = { openAnkushOffsetSetter(this@SettingsActivity, preferenceObject) { ankushOffsetText = it } },
             )
 
             OtherGroup(

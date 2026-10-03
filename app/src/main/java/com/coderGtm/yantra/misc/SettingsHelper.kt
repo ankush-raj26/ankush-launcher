@@ -82,6 +82,27 @@ fun openFontSizeSetter(activity: Activity, preferenceObject: SharedPreferences, 
     )
 }
 
+fun openAnkushOffsetSetter(activity: Activity, preferenceObject: SharedPreferences, onUpdate: (String) -> Unit) {
+    YantraLauncherDialog(activity).takeInput(
+        title = "Time-code offset",
+        message = "Number added at the end of the alias time code (0-${com.coderGtm.yantra.ankush.Ankush.MAX_OFFSET}). Default 5.",
+        initialInput = com.coderGtm.yantra.ankush.Ankush.getOffset(preferenceObject).toString(),
+        inputType = InputType.TYPE_CLASS_NUMBER,
+        positiveButton = activity.getString(R.string.save),
+        positiveAction = {
+            val v = it.toIntOrNull()
+            if (v == null || v < 0 || v > com.coderGtm.yantra.ankush.Ankush.MAX_OFFSET) {
+                toast(activity, "Enter a number between 0 and ${com.coderGtm.yantra.ankush.Ankush.MAX_OFFSET}.")
+                return@takeInput
+            }
+            com.coderGtm.yantra.ankush.Ankush.setOffset(preferenceObject, v)
+            onUpdate(v.toString())
+            toast(activity, "Time-code offset set to $v.")
+            changedSettingsCallback(activity)
+        },
+    )
+}
+
 fun openArrowSizeSetter(activity: Activity, preferenceObject: SharedPreferences, preferenceEditObject: Editor, onUpdate: (String) -> Unit) {
     YantraLauncherDialog(activity).takeInput(
         title = activity.getString(R.string.arrow_keys_size),
