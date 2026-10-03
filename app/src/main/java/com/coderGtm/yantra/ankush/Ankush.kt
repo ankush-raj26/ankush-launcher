@@ -40,11 +40,11 @@ object Ankush {
 
     // ---------- timings ----------
     /** After a correct password, protected commands run without asking again for this long. */
-    const val UNLOCK_WINDOW_MS = 60_000L
+    const val UNLOCK_WINDOW_MS = 120_000L
     /** ankush-help output is wiped from the screen after this long. */
-    const val HELP_AUTO_CLEAR_MS = 60_000L
-    private const val MAX_FAILED_ATTEMPTS = 3
-    private const val LOCKOUT_MS = 5 * 60_000L
+    const val HELP_AUTO_CLEAR_MS = 120_000L
+    const val MAX_FAILED_ATTEMPTS = 10
+    const val LOCKOUT_MS = 3 * 60_000L
 
     /** Built-in commands that reveal activity or change setup: these ask for the password. */
     val PROTECTED_COMMANDS = setOf(
@@ -126,8 +126,8 @@ object Ankush {
     enum class PasswordResult { CORRECT, DECOY, WRONG, LOCKED }
 
     /**
-     * Checks a typed password. 3 wrong attempts in a row lock all password checks for
-     * 5 minutes (even the correct password is refused while locked).
+     * Checks a typed password. MAX_FAILED_ATTEMPTS (10) wrong attempts in a row lock all
+     * password checks for LOCKOUT_MS (3 minutes); even the correct password is refused while locked.
      */
     fun verifyPassword(prefs: SharedPreferences, password: String): PasswordResult {
         val now = System.currentTimeMillis()
