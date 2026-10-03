@@ -972,33 +972,6 @@ class Terminal(
         h("SEE YANTRA'S NORMAL COMMANDS")
         t("1) ${Ankush.ALIAS_LOCK_COMMAND} off   2) help  (or: help launch)   3) ${Ankush.ALIAS_LOCK_COMMAND} on")
         t(line)
-
-        h("PASSWORD-PROTECTED COMMANDS")
-        t(Ankush.PROTECTED_COMMANDS.sorted().joinToString(", "))
-        t(line)
-
-        h("ALWAYS ON")
-        t("No suggestions, no history, commands not shown on screen.")
-        t("Screen clears when you leave the launcher. Double tap = clear + screen off.")
-        t("After a correct password, protected commands stay unlocked for ${Ankush.UNLOCK_WINDOW_MS / 1000} s")
-        t("(the unlock ends early when you leave the launcher or double tap).")
-        t("${Ankush.MAX_FAILED_ATTEMPTS} wrong passwords in a row = ${Ankush.LOCKOUT_MS / 60_000} minute lockout.")
-        t(line)
-
-        h("CHANGED FROM NORMAL YANTRA")
-        t("App name is Ankush. All Pro features are enabled.")
-        t("Removed: community, feedback, support, cmdrequest, wiki, pro.")
-        t("help is hidden while the alias lock is ON.")
-        t("No rating / community / buy-Pro popups, no Play Store update checks.")
-        t("Settings: suggestion order and double-tap command are disabled.")
-        t(line)
-
-        h("IF SOMETHING SEEMS WRONG")
-        t("Wrong password shows only 'Command not recognized.'")
-        t("During a lockout even the right password shows that: wait ${Ankush.LOCKOUT_MS / 60_000} minutes.")
-        t("Double tap not turning the screen off? Enable Ankush in Settings > Accessibility.")
-        t("Alias not working? Check the time code, or use ${Ankush.ALIAS_LOCK_COMMAND} off.")
-        t(line)
         t("(This screen clears itself in ${Ankush.HELP_AUTO_CLEAR_MS / 1000} seconds.)")
         scheduleAnkushHelpClear()
     }
