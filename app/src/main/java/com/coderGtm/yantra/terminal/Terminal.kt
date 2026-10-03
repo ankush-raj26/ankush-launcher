@@ -77,9 +77,16 @@ class Terminal(
     private var commandQueue: MutableList<String> = mutableListOf()
 
     // Ankush: password prompt state (next input is consumed as a password).
-    private enum class AnkushPrompt { HELP_PASSWORD, PASSWD_CURRENT, PASSWD_NEW, PASSWD_CONFIRM }
+    private enum class AnkushPrompt {
+        HELP, AUTHORIZE, PASSWD_CURRENT, PASSWD_NEW, PASSWD_CONFIRM, DECOY_NEW, DECOY_CONFIRM
+    }
     private var ankushPrompt: AnkushPrompt? = null
+    private var ankushPromptStealth = false
+    private var ankushPendingAction: (() -> Unit)? = null
     private var ankushNewPassword: String? = null
+    private var ankushUnlockedUntil = 0L
+    private val ankushHandler = Handler(Looper.getMainLooper())
+    private val ankushClearScreen = Runnable { binding.terminalOutput.removeAllViews() }
     private var cmdHistoryCursor = -1
     private var commandCache = mutableListOf<Map<String, BaseCommand>>()
 
@@ -283,6 +290,7 @@ class Terminal(
         binding.downBtn.setOnClickListener { cmdDown() }
         setTextChangedListener()
         createTouchListeners()
+        applyExtraPrivacy()
         aliasList = getAliases(preferenceObject)
         primarySuggestions = reorderPrimarySuggestions(preferenceObject, getPrimarySuggestionsList(getAvailableCommands(activity), aliasList))
         checkAliasNames()
@@ -406,7 +414,8 @@ class Terminal(
         }
     }
     private fun setArrowKeys(preferenceObject: SharedPreferences, binding: MainActivityUiRefs) {
-        val showArrowKeys = preferenceObject.getBoolean("showArrowKeys",true)
+        // Ankush: no history, so no history arrows.
+        val showArrowKeys = Ankush.HISTORY_ENABLED && preferenceObject.getBoolean("showArrowKeys",true)
         if (showArrowKeys) {
             val arrowSize = preferenceObject.getInt("arrowSize", 65).toFloat()
             binding.upBtn.textSize = arrowSize
@@ -588,19 +597,20 @@ class Terminal(
             return
         }
         val commandName = command.trim().split(" ").firstOrNull()
-        // Ankush: hidden management commands (not in help/suggestions, not kept in history).
+        // Ankush: hidden management commands (never echoed, never kept in history).
         if (!isAlias && commandName != null && commandName.lowercase() in Ankush.MANAGEMENT_COMMANDS) {
-            if (logCmd) echoCommand(command)
             handleAnkushCommand(command.trim())
             return
         }
         if (!isAlias) {
-            if (logCmd && !NO_LOG_COMMANDS.contains(commandName?.lowercase())) {
+            if (Ankush.ECHO_COMMANDS && logCmd && !NO_LOG_COMMANDS.contains(commandName?.lowercase())) {
                 echoCommand(command)
             }
             if (command.trim()!="") {
-                cmdHistory.add(command)
-                cmdHistoryCursor = cmdHistory.size
+                if (Ankush.HISTORY_ENABLED) {
+                    cmdHistory.add(command)
+                    cmdHistoryCursor = cmdHistory.size
+                }
                 incrementNumOfCommandsEntered(preferenceObject, preferenceObject.edit())
                 showRatingAndCommunityPopups(preferenceObject, preferenceObject.edit(), activity)
                 promoteProVersion(this@Terminal, preferenceObject)
@@ -644,6 +654,14 @@ class Terminal(
         }
         val commandInstance = getCommandInstance(effectiveName)
         if (commandInstance != null) {
+            // Ankush: commands that reveal activity or change setup need the password.
+            if (effectiveName in Ankush.PROTECTED_COMMANDS) {
+                val finalCommand = effectiveCommand
+                requireAuth(stealth = false, triggerName = commandName.toString()) {
+                    commandInstance.execute(finalCommand)
+                }
+                return
+            }
             commandInstance.execute(effectiveCommand)
         }
         else {
@@ -667,46 +685,131 @@ class Terminal(
 
     // ---------------- Ankush personal commands ----------------
 
-    private fun handleAnkushCommand(command: String) {
-        val args = command.split(" ").filter { it.isNotEmpty() }
-        when (args[0].lowercase()) {
-            Ankush.HELP_COMMAND -> startAnkushPrompt(AnkushPrompt.HELP_PASSWORD, "Enter password:")
-            Ankush.PASSWD_COMMAND -> startAnkushPrompt(AnkushPrompt.PASSWD_CURRENT, "Enter current password:")
-            Ankush.RENAME_COMMAND -> ankushRename(args)
-            Ankush.RESET_COMMAND -> ankushReset(args)
+    /** Called when the launcher goes to the background (app opened, home left, screen off). */
+    fun ankushOnStop() {
+        endAnkushPrompt()
+        ankushUnlockedUntil = 0L
+        activity.runOnUiThread {
+            ankushHandler.removeCallbacks(ankushClearScreen)
+            binding.terminalOutput.removeAllViews()
+            binding.cmdInput.setText("")
         }
     }
 
-    private fun startAnkushPrompt(prompt: AnkushPrompt, message: String) {
+    private fun applyExtraPrivacy() {
+        val enabled = Ankush.isExtraPrivacy(preferenceObject)
+        activity.runOnUiThread {
+            if (enabled) {
+                activity.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+            } else {
+                activity.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+            }
+        }
+    }
+
+    private fun isAnkushUnlocked(): Boolean = System.currentTimeMillis() < ankushUnlockedUntil
+
+    private fun notRecognizedMessage(name: String) {
+        output("$name is not a recognized command.", theme.errorTextColor, null)
+    }
+
+    /**
+     * Runs [action] right away if unlocked, otherwise asks for the password first.
+     * stealth = true: looks exactly like an unknown command, then silently waits for the password.
+     */
+    private fun requireAuth(stealth: Boolean, triggerName: String, action: () -> Unit) {
+        if (isAnkushUnlocked()) {
+            action()
+            return
+        }
+        ankushPendingAction = action
+        if (stealth) notRecognizedMessage(triggerName) else output("Enter password:", theme.warningTextColor, null)
+        beginAnkushPrompt(AnkushPrompt.AUTHORIZE, stealth)
+    }
+
+    private fun handleAnkushCommand(command: String) {
+        val args = command.split(" ").filter { it.isNotEmpty() }
+        val name = args[0]
+        when (name.lowercase()) {
+            Ankush.HELP_COMMAND -> {
+                if (isAnkushUnlocked()) {
+                    showAnkushHelp(decoy = false)
+                } else {
+                    notRecognizedMessage(name)
+                    beginAnkushPrompt(AnkushPrompt.HELP, stealth = true)
+                }
+            }
+            Ankush.PASSWD_COMMAND -> {
+                // always asks for the current password, even when unlocked
+                notRecognizedMessage(name)
+                beginAnkushPrompt(AnkushPrompt.PASSWD_CURRENT, stealth = true)
+            }
+            Ankush.RENAME_COMMAND -> requireAuth(true, name) { ankushRename(args) }
+            Ankush.RESET_COMMAND -> requireAuth(true, name) { ankushReset(args) }
+            Ankush.DECOY_COMMAND -> requireAuth(true, name) { ankushDecoy(args) }
+            Ankush.PRIVACY_COMMAND -> requireAuth(true, name) { ankushPrivacy(args) }
+        }
+    }
+
+    private fun beginAnkushPrompt(prompt: AnkushPrompt, stealth: Boolean) {
         ankushPrompt = prompt
-        output(message, theme.warningTextColor, null)
+        ankushPromptStealth = stealth
         activity.runOnUiThread { binding.cmdInput.setPasswordMode(true) }
     }
 
     private fun endAnkushPrompt() {
         ankushPrompt = null
+        ankushPromptStealth = false
+        ankushPendingAction = null
         ankushNewPassword = null
         activity.runOnUiThread { binding.cmdInput.setPasswordMode(false) }
     }
 
+    /** Message for a failed password. Stealth prompts keep pretending nothing is there. */
+    private fun ankushPasswordFailed(result: Ankush.PasswordResult, stealth: Boolean) {
+        when {
+            stealth -> output("Command not recognized.", theme.errorTextColor, null)
+            result == Ankush.PasswordResult.LOCKED ->
+                output("Too many wrong attempts. Try again later.", theme.errorTextColor, null)
+            else -> output("Wrong password.", theme.errorTextColor, null)
+        }
+    }
+
+    private fun unlockAnkush() {
+        ankushUnlockedUntil = System.currentTimeMillis() + Ankush.UNLOCK_WINDOW_MS
+    }
+
     private fun handleAnkushPromptInput(input: String) {
         val value = input.trim()
+        val stealth = ankushPromptStealth
         when (ankushPrompt) {
-            AnkushPrompt.HELP_PASSWORD -> {
+            AnkushPrompt.HELP -> {
                 endAnkushPrompt()
-                if (Ankush.checkPassword(preferenceObject, value)) {
-                    showAnkushHelp()
+                when (val result = Ankush.verifyPassword(preferenceObject, value)) {
+                    Ankush.PasswordResult.CORRECT -> { unlockAnkush(); showAnkushHelp(decoy = false) }
+                    Ankush.PasswordResult.DECOY -> showAnkushHelp(decoy = true)
+                    else -> ankushPasswordFailed(result, stealth)
+                }
+            }
+            AnkushPrompt.AUTHORIZE -> {
+                val action = ankushPendingAction
+                endAnkushPrompt()
+                val result = Ankush.verifyPassword(preferenceObject, value)
+                if (result == Ankush.PasswordResult.CORRECT) {
+                    unlockAnkush()
+                    action?.invoke()
                 } else {
-                    output("Wrong password.", theme.errorTextColor, null)
+                    ankushPasswordFailed(result, stealth)
                 }
             }
             AnkushPrompt.PASSWD_CURRENT -> {
-                if (Ankush.checkPassword(preferenceObject, value)) {
+                val result = Ankush.verifyPassword(preferenceObject, value)
+                if (result == Ankush.PasswordResult.CORRECT) {
                     ankushPrompt = AnkushPrompt.PASSWD_NEW
                     output("Enter new password:", theme.warningTextColor, null)
                 } else {
                     endAnkushPrompt()
-                    output("Wrong password.", theme.errorTextColor, null)
+                    ankushPasswordFailed(result, stealth)
                 }
             }
             AnkushPrompt.PASSWD_NEW -> {
@@ -729,12 +832,41 @@ class Terminal(
                     output("Passwords did not match. Nothing changed.", theme.errorTextColor, null)
                 }
             }
+            AnkushPrompt.DECOY_NEW -> {
+                when {
+                    value.length < 4 -> {
+                        endAnkushPrompt()
+                        output("Decoy password must be at least 4 characters. Nothing changed.", theme.errorTextColor, null)
+                    }
+                    Ankush.isMainPassword(preferenceObject, value) -> {
+                        endAnkushPrompt()
+                        output("Decoy password must be different from your real password. Nothing changed.", theme.errorTextColor, null)
+                    }
+                    else -> {
+                        ankushNewPassword = value
+                        ankushPrompt = AnkushPrompt.DECOY_CONFIRM
+                        output("Type the decoy password again:", theme.warningTextColor, null)
+                    }
+                }
+            }
+            AnkushPrompt.DECOY_CONFIRM -> {
+                val decoy = ankushNewPassword
+                endAnkushPrompt()
+                if (decoy != null && decoy == value) {
+                    Ankush.setDecoyPassword(preferenceObject, decoy)
+                    output("Decoy password set. Entering it at ankush-help shows a fake, empty list.", theme.successTextColor, null)
+                } else {
+                    output("Passwords did not match. Nothing changed.", theme.errorTextColor, null)
+                }
+            }
             null -> {}
         }
     }
 
-    private fun showAnkushHelp() {
-        val renames = Ankush.getRenames(preferenceObject)
+    /** decoy = true shows a harmless fake list: nothing renamed, no aliases. */
+    private fun showAnkushHelp(decoy: Boolean) {
+        val renames: Map<String, String> = if (decoy) emptyMap() else Ankush.getRenames(preferenceObject)
+        val aliases = if (decoy) emptyList() else aliasList.sortedBy { it.key }
         output("Ankush command map", theme.warningTextColor, Typeface.BOLD_ITALIC)
         output("-------------------------", theme.warningTextColor, null)
         if (renames.isEmpty()) {
@@ -746,17 +878,50 @@ class Terminal(
         }
         output("-------------------------", theme.warningTextColor, null)
         output("Aliases (type: <alias> <hour+minute>, 24h clock)", theme.warningTextColor, Typeface.BOLD)
-        if (aliasList.isEmpty()) {
+        if (aliases.isEmpty()) {
             output("No aliases.", theme.resultTextColor, null)
         } else {
-            aliasList.sortedBy { it.key }.forEach {
-                output("${it.key}  =  ${it.value}", theme.resultTextColor, null)
-            }
+            aliases.forEach { output("${it.key}  =  ${it.value}", theme.resultTextColor, null) }
         }
         output("-------------------------", theme.warningTextColor, null)
         output("Unchanged commands: " + commands.keys.filter { it !in renames }.sorted().joinToString(", "), theme.resultTextColor, null)
+        output("Password-protected: " + Ankush.PROTECTED_COMMANDS.sorted().joinToString(", "), theme.resultTextColor, null)
+        if (!decoy) {
+            output("Extra privacy (block screenshots): " + if (Ankush.isExtraPrivacy(preferenceObject)) "ON" else "OFF", theme.resultTextColor, null)
+            output("Decoy password: " + if (Ankush.hasDecoyPassword(preferenceObject)) "set" else "not set", theme.resultTextColor, null)
+        }
         output("-------------------------", theme.warningTextColor, null)
-        output("${Ankush.RENAME_COMMAND} <command> <new-name>  |  ${Ankush.RESET_COMMAND} <command|all>  |  ${Ankush.PASSWD_COMMAND}", theme.resultTextColor, null)
+        output("${Ankush.RENAME_COMMAND} <command> <new-name> | ${Ankush.RESET_COMMAND} <command|all> | ${Ankush.PASSWD_COMMAND} | ${Ankush.DECOY_COMMAND} [off] | ${Ankush.PRIVACY_COMMAND} on|off", theme.resultTextColor, null)
+        output("(This list clears itself in ${Ankush.HELP_AUTO_CLEAR_MS / 1000} seconds.)", theme.resultTextColor, null)
+        activity.runOnUiThread {
+            ankushHandler.removeCallbacks(ankushClearScreen)
+            ankushHandler.postDelayed(ankushClearScreen, Ankush.HELP_AUTO_CLEAR_MS)
+        }
+    }
+
+    private fun ankushDecoy(args: List<String>) {
+        if (args.getOrNull(1)?.lowercase() == "off") {
+            Ankush.setDecoyPassword(preferenceObject, null)
+            output("Decoy password removed.", theme.successTextColor, null)
+            return
+        }
+        output("Enter decoy password:", theme.warningTextColor, null)
+        beginAnkushPrompt(AnkushPrompt.DECOY_NEW, stealth = false)
+    }
+
+    private fun ankushPrivacy(args: List<String>) {
+        when (args.getOrNull(1)?.lowercase()) {
+            "on" -> Ankush.setExtraPrivacy(preferenceObject, true)
+            "off" -> Ankush.setExtraPrivacy(preferenceObject, false)
+            null -> {}
+            else -> {
+                output("Usage: ${Ankush.PRIVACY_COMMAND} on|off", theme.errorTextColor, null)
+                return
+            }
+        }
+        applyExtraPrivacy()
+        val on = Ankush.isExtraPrivacy(preferenceObject)
+        output("Extra privacy is " + (if (on) "ON: screenshots and the recent-apps preview are blocked." else "OFF."), theme.successTextColor, null)
     }
 
     private fun ankushRename(args: List<String>) {

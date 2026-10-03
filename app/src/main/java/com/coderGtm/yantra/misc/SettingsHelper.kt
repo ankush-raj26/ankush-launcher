@@ -203,6 +203,11 @@ fun openSwipeLeftActionSetter(activity: Activity, preferenceObject: SharedPrefer
 }
 
 fun openPrimarySuggestionsOrderSetter(activity: Activity, preferenceObject: SharedPreferences, preferenceEditObject: Editor) {
+    // Ankush: suggestions are disabled, and this list would reveal alias names.
+    if (!com.coderGtm.yantra.ankush.Ankush.SUGGESTIONS_ENABLED) {
+        toast(activity, "Suggestions are disabled in this build.")
+        return
+    }
     val allPrimarySuggestions = getPrimarySuggestionsList(getAvailableCommands(activity), getAliases(preferenceObject))
 
     showPrimarySuggestionsReorderPopup(activity, preferenceObject, preferenceEditObject, allPrimarySuggestions) { reorderedPrimarySuggestions ->

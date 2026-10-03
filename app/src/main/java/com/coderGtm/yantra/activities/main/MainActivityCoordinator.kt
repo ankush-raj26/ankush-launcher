@@ -109,6 +109,8 @@ internal class MainActivityCoordinator(
 
     fun onStop() {
         terminal.initTasksQueued = false
+        // Ankush: wipe the screen, cancel any password prompt and re-lock when leaving.
+        terminal.ankushOnStop()
     }
 
     fun onRestart() {
