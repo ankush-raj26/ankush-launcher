@@ -330,5 +330,5 @@ const val DEFAULT_SYSINFO_ART =
 "          oNMm-  -mMNs"
 
 val NO_LOG_COMMANDS = listOf("sleep", "echo", "notify")
-val DEFAULT_ALIAS_LIST = arrayListOf(Alias("h", "help"), Alias("l", "launch"), Alias("i", "info"), Alias("u", "uninstall"), Alias("bt", "bluetooth"), Alias("w", "weather"), Alias("tx", "termux"), Alias("cls", "clear"), Alias("google", "search -e=google"), Alias("ddg", "search -e=duckduckgo")
+val DEFAULT_ALIAS_LIST = arrayListOf(Alias("l", "launch"), Alias("i", "info"), Alias("u", "uninstall"), Alias("bt", "bluetooth"), Alias("w", "weather"), Alias("tx", "termux"), Alias("cls", "clear"), Alias("google", "search -e=google"), Alias("ddg", "search -e=duckduckgo")
 )

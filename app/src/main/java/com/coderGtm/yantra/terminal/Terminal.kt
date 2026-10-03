@@ -26,7 +26,6 @@ import com.coderGtm.yantra.activities.main.MainActivityBehavior
 import com.coderGtm.yantra.blueprints.BaseCommand
 import com.coderGtm.yantra.blueprints.YantraLauncherDialog
 import com.coderGtm.yantra.contactsManager
-import com.coderGtm.yantra.findSimilarity
 import com.coderGtm.yantra.getAliases
 import com.coderGtm.yantra.getCurrentTheme
 import com.coderGtm.yantra.getInit
@@ -132,6 +131,11 @@ class Terminal(
         secondaryEnabled: Boolean,
     ) {
         suggestionJob?.cancel()
+        // Ankush: suggestions are disabled entirely (nothing is shown while typing).
+        if (!Ankush.SUGGESTIONS_ENABLED) {
+            binding.suggestionsTab.removeAllViews()
+            return
+        }
         suggestionJob = suggestionScope.launch {
             delay(75)
             // Ankush: never suggest anything while a password is being typed.
@@ -657,18 +661,8 @@ class Terminal(
     }
 
     private fun showNotRecognized(commandName: String) {
-        // find most similar visible command name and recommend it
-        val renames = Ankush.getRenames(preferenceObject)
-        var maxScore = 0.0
-        var matchingName = renames["help"] ?: "help"
-        for (cmd in commands.keys.map { renames[it] ?: it }) {
-            val score = findSimilarity(cmd, commandName)
-            if (score > maxScore) {
-                matchingName = cmd
-                maxScore = score
-            }
-        }
-        output("$commandName is not a recognized command or alias. Did you mean $matchingName?", theme.errorTextColor, null)
+        // Ankush: no "Did you mean ...?" hint, so command names are never revealed.
+        output("$commandName is not a recognized command.", theme.errorTextColor, null)
     }
 
     // ---------------- Ankush personal commands ----------------

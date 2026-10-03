@@ -61,7 +61,6 @@ fun getAvailableCommands(activity: Activity): Map<String,  Class<out BaseCommand
     if (isPro(activity)) {
         return mapOf(
             "launch" to com.coderGtm.yantra.commands.launch.Command::class.java,
-            "help" to com.coderGtm.yantra.commands.help.Command::class.java,
             "community" to com.coderGtm.yantra.commands.community.Command::class.java,
             "theme" to com.coderGtm.yantra.commands.theme.Command::class.java,
             "call" to com.coderGtm.yantra.commands.call.Command::class.java,
@@ -132,7 +131,6 @@ fun getAvailableCommands(activity: Activity): Map<String,  Class<out BaseCommand
     else {
         return mapOf(
             "launch" to com.coderGtm.yantra.commands.launch.Command::class.java,
-            "help" to com.coderGtm.yantra.commands.help.Command::class.java,
             "community" to com.coderGtm.yantra.commands.community.Command::class.java,
             "call" to com.coderGtm.yantra.commands.call.Command::class.java,
             "bluetooth" to com.coderGtm.yantra.commands.bluetooth.Command::class.java,

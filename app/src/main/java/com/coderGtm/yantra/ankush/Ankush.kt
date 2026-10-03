@@ -15,6 +15,9 @@ object Ankush {
     const val RENAME_COMMAND = "ankush-rename"
     const val RESET_COMMAND = "ankush-reset"
     const val PASSWD_COMMAND = "ankush-passwd"
+    /** Ankush: command suggestions are turned off entirely for privacy. */
+    const val SUGGESTIONS_ENABLED = false
+
     val MANAGEMENT_COMMANDS = setOf(HELP_COMMAND, RENAME_COMMAND, RESET_COMMAND, PASSWD_COMMAND)
 
     private const val PREF_RENAMES = "ankushRenames"          // StringSet of "original=custom"
