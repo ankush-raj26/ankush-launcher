@@ -20,9 +20,14 @@ object Ankush {
     const val PASSWD_COMMAND = "ankush-passwd"
     const val DECOY_COMMAND = "ankush-decoy"
     const val PRIVACY_COMMAND = "ankush-privacy"
+    const val ALIAS_LOCK_COMMAND = "ankush-alias"
     val MANAGEMENT_COMMANDS = setOf(
-        HELP_COMMAND, RENAME_COMMAND, RESET_COMMAND, PASSWD_COMMAND, DECOY_COMMAND, PRIVACY_COMMAND
+        HELP_COMMAND, RENAME_COMMAND, RESET_COMMAND, PASSWD_COMMAND, DECOY_COMMAND, PRIVACY_COMMAND,
+        ALIAS_LOCK_COMMAND
     )
+
+    /** Built-in commands that only work while the alias lock is OFF. */
+    val HIDDEN_WHILE_LOCKED = setOf("help")
 
     // ---------- privacy switches (compile-time; flip to true to bring a feature back) ----------
     /** Command suggestions while typing. */
@@ -51,6 +56,7 @@ object Ankush {
     private const val PREF_FAILED_ATTEMPTS = "ankushFailedAttempts"
     private const val PREF_LOCKED_UNTIL = "ankushLockedUntil"
     private const val PREF_EXTRA_PRIVACY = "ankushExtraPrivacy"
+    private const val PREF_ALIAS_LOCK = "ankushAliasLock"
     private const val DEFAULT_PASSWORD = "spytro26"
 
     private val NAME_REGEX = Regex("^[a-z][a-z0-9]*$")
@@ -161,6 +167,18 @@ object Ankush {
 
     fun setExtraPrivacy(prefs: SharedPreferences, enabled: Boolean) {
         prefs.edit().putBoolean(PREF_EXTRA_PRIVACY, enabled).apply()
+    }
+
+    // ---------- alias lock (ankush-alias on|off) ----------
+    /**
+     * ON (default): aliases need the time code, original names of renamed commands are
+     * disabled, and help is hidden. OFF: aliases work without a code, original command
+     * names work alongside the renamed ones, and help is available.
+     */
+    fun isAliasLock(prefs: SharedPreferences): Boolean = prefs.getBoolean(PREF_ALIAS_LOCK, true)
+
+    fun setAliasLock(prefs: SharedPreferences, enabled: Boolean) {
+        prefs.edit().putBoolean(PREF_ALIAS_LOCK, enabled).apply()
     }
 
     private fun hashEquals(a: String, b: String): Boolean =

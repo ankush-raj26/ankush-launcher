@@ -623,6 +623,10 @@ class Terminal(
                 val rest: List<String>
                 if (isAlias) {
                     rest = parts.drop(1) // alias used inside another alias: already unlocked
+                } else if (!Ankush.isAliasLock(preferenceObject)) {
+                    // alias lock OFF: no code needed (a correct code is still accepted and dropped)
+                    val code = parts.getOrNull(1)?.toIntOrNull()
+                    rest = if (code != null && code in Ankush.acceptedTimeCodes()) parts.drop(2) else parts.drop(1)
                 } else {
                     val code = parts.getOrNull(1)?.toIntOrNull()
                     if (code == null || code !in Ankush.acceptedTimeCodes()) {
@@ -640,16 +644,22 @@ class Terminal(
         // and the original name stops working (except inside aliases).
         var effectiveCommand = command.trim()
         var effectiveName = commandName.toString().lowercase()
+        val aliasLock = Ankush.isAliasLock(preferenceObject)
         val renames = Ankush.getRenames(preferenceObject)
         if (renames.isNotEmpty() && commandName != null) {
             val original = renames.entries.firstOrNull { it.value == effectiveName }?.key
             if (original != null) {
                 effectiveCommand = original + effectiveCommand.substring(commandName.length)
                 effectiveName = original
-            } else if (effectiveName in renames && !isAlias) {
+            } else if (effectiveName in renames && !isAlias && aliasLock) {
                 showNotRecognized(commandName)
                 return
             }
+        }
+        // Ankush: help (and similar) only exists while the alias lock is off.
+        if (aliasLock && effectiveName in Ankush.HIDDEN_WHILE_LOCKED) {
+            showNotRecognized(commandName.toString())
+            return
         }
         val commandInstance = getCommandInstance(effectiveName)
         if (commandInstance != null) {
@@ -747,6 +757,7 @@ class Terminal(
             Ankush.RESET_COMMAND -> requireAuth(true, name) { ankushReset(args) }
             Ankush.DECOY_COMMAND -> requireAuth(true, name) { ankushDecoy(args) }
             Ankush.PRIVACY_COMMAND -> requireAuth(true, name) { ankushPrivacy(args) }
+            Ankush.ALIAS_LOCK_COMMAND -> requireAuth(true, name) { ankushAliasLock(args) }
         }
     }
 
@@ -886,11 +897,12 @@ class Terminal(
         output("Unchanged commands: " + commands.keys.filter { it !in renames }.sorted().joinToString(", "), theme.resultTextColor, null)
         output("Password-protected: " + Ankush.PROTECTED_COMMANDS.sorted().joinToString(", "), theme.resultTextColor, null)
         if (!decoy) {
+            output("Alias lock: " + if (Ankush.isAliasLock(preferenceObject)) "ON" else "OFF", theme.resultTextColor, null)
             output("Extra privacy (block screenshots): " + if (Ankush.isExtraPrivacy(preferenceObject)) "ON" else "OFF", theme.resultTextColor, null)
             output("Decoy password: " + if (Ankush.hasDecoyPassword(preferenceObject)) "set" else "not set", theme.resultTextColor, null)
         }
         output("-------------------------", theme.warningTextColor, null)
-        output("${Ankush.RENAME_COMMAND} <command> <new-name> | ${Ankush.RESET_COMMAND} <command|all> | ${Ankush.PASSWD_COMMAND} | ${Ankush.DECOY_COMMAND} [off] | ${Ankush.PRIVACY_COMMAND} on|off", theme.resultTextColor, null)
+        output("${Ankush.RENAME_COMMAND} <command> <new-name> | ${Ankush.RESET_COMMAND} <command|all> | ${Ankush.PASSWD_COMMAND} | ${Ankush.DECOY_COMMAND} [off] | ${Ankush.PRIVACY_COMMAND} on|off | ${Ankush.ALIAS_LOCK_COMMAND} on|off", theme.resultTextColor, null)
         output("(This list clears itself in ${Ankush.HELP_AUTO_CLEAR_MS / 1000} seconds.)", theme.resultTextColor, null)
         activity.runOnUiThread {
             ankushHandler.removeCallbacks(ankushClearScreen)
@@ -921,6 +933,23 @@ class Terminal(
         applyExtraPrivacy()
         val on = Ankush.isExtraPrivacy(preferenceObject)
         output("Extra privacy is " + (if (on) "ON: screenshots and the recent-apps preview are blocked." else "OFF."), theme.successTextColor, null)
+    }
+
+    private fun ankushAliasLock(args: List<String>) {
+        when (args.getOrNull(1)?.lowercase()) {
+            "on" -> Ankush.setAliasLock(preferenceObject, true)
+            "off" -> Ankush.setAliasLock(preferenceObject, false)
+            null -> {}
+            else -> {
+                output("Usage: ${Ankush.ALIAS_LOCK_COMMAND} on|off", theme.errorTextColor, null)
+                return
+            }
+        }
+        if (Ankush.isAliasLock(preferenceObject)) {
+            output("Alias lock is ON: aliases need the time code, original command names and help are disabled.", theme.successTextColor, null)
+        } else {
+            output("Alias lock is OFF: aliases work without a code, original command names and help work too.", theme.warningTextColor, null)
+        }
     }
 
     private fun ankushRename(args: List<String>) {
