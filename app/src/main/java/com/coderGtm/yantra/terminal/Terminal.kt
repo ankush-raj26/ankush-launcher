@@ -931,6 +931,7 @@ class Terminal(
             t("Use the new name, e.g. '$c ...' instead of '$o ...'.")
             t(if (aliasLock) "Old names are disabled while the alias lock is ON." else "Alias lock is OFF: old names work too.")
         }
+        t("Aliases that use a renamed command are updated automatically.")
         t(line)
 
         h("ALIASES")
@@ -945,6 +946,7 @@ class Terminal(
             t("Alias lock is OFF: just type the alias, e.g. ${aliases.firstOrNull()?.key ?: "fk"}")
         }
         t("Create: alias fk=luck whatsapp   Remove: unalias fk   (both ask the password)")
+        t("Typing 'alias' alone no longer lists aliases; they are only shown here.")
         t(line)
 
         h("TIME CODE (12-hour clock)")
@@ -963,6 +965,8 @@ class Terminal(
         t("${Ankush.PASSWD_COMMAND} ............ change your password")
         t("${Ankush.DECOY_COMMAND} [off] ....... set / remove decoy password")
         t("${Ankush.PRIVACY_COMMAND} on|off .... block screenshots + recents preview")
+        t("Decoy password at ${Ankush.HELP_COMMAND} shows a fake list: no renames, no aliases.")
+        t("Check a setting without changing it: ${Ankush.ALIAS_LOCK_COMMAND}, ${Ankush.OFFSET_COMMAND}, ${Ankush.PRIVACY_COMMAND} (no on/off).")
         t(line)
 
         h("SEE YANTRA'S NORMAL COMMANDS")
@@ -975,9 +979,25 @@ class Terminal(
 
         h("ALWAYS ON")
         t("No suggestions, no history, commands not shown on screen.")
-        t("Screen clears when you leave the launcher. Double tap = screen off.")
-        t("After a correct password, protected commands stay unlocked for ${Ankush.UNLOCK_WINDOW_MS / 1000} s.")
+        t("Screen clears when you leave the launcher. Double tap = clear + screen off.")
+        t("After a correct password, protected commands stay unlocked for ${Ankush.UNLOCK_WINDOW_MS / 1000} s")
+        t("(the unlock ends early when you leave the launcher or double tap).")
         t("${Ankush.MAX_FAILED_ATTEMPTS} wrong passwords in a row = ${Ankush.LOCKOUT_MS / 60_000} minute lockout.")
+        t(line)
+
+        h("CHANGED FROM NORMAL YANTRA")
+        t("App name is Ankush. All Pro features are enabled.")
+        t("Removed: community, feedback, support, cmdrequest, wiki, pro.")
+        t("help is hidden while the alias lock is ON.")
+        t("No rating / community / buy-Pro popups, no Play Store update checks.")
+        t("Settings: suggestion order and double-tap command are disabled.")
+        t(line)
+
+        h("IF SOMETHING SEEMS WRONG")
+        t("Wrong password shows only 'Command not recognized.'")
+        t("During a lockout even the right password shows that: wait ${Ankush.LOCKOUT_MS / 60_000} minutes.")
+        t("Double tap not turning the screen off? Enable Ankush in Settings > Accessibility.")
+        t("Alias not working? Check the time code, or use ${Ankush.ALIAS_LOCK_COMMAND} off.")
         t(line)
         t("(This screen clears itself in ${Ankush.HELP_AUTO_CLEAR_MS / 1000} seconds.)")
         scheduleAnkushHelpClear()
